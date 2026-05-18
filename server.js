@@ -5,10 +5,61 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// simple in-memory database
+const users = {};
+
+function getUser(wallet) {
+  if (!users[wallet]) {
+    users[wallet] = { score: 0, lastTap: 0 };
+  }
+  return users[wallet];
+}
+
+// HOME TEST
 app.get("/", (req, res) => {
-  res.send("PEPEVOLT server running 🚀");
+  res.send("PEPEVOLT API RUNNING 🚀");
 });
 
-app.listen(3000, () => {
-  console.log("Server running");
+// TAP SYSTEM
+app.post("/tap", (req, res) => {
+  const { wallet } = req.body;
+
+  if (!wallet) return res.json({ error: "No wallet" });
+
+  const user = getUser(wallet);
+
+  const now = Date.now();
+
+  // anti-spam (300ms)
+  if (now - user.lastTap < 300) {
+    return res.json({ error: "Too fast" });
+  }
+
+  user.lastTap = now;
+  user.score += 1;
+
+  res.json({
+    wallet,
+    score: user.score
+  });
+});
+
+// GET SCORE
+app.get("/score/:wallet", (req, res) => {
+  const user = getUser(req.params.wallet);
+
+  res.json({
+    wallet: req.params.wallet,
+    score: user.score
+  });
+});
+
+// LEADERBOARD
+app.get("/leaderboard", (req, res) => {
+  res.json(users);
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log("PEPEVOLT server running on port " + PORT);
 });
