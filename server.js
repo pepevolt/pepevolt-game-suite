@@ -5,7 +5,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// simple in-memory database
+// memory storage
 const users = {};
 
 function getUser(wallet) {
@@ -15,12 +15,12 @@ function getUser(wallet) {
   return users[wallet];
 }
 
-// HOME TEST
+// test route
 app.get("/", (req, res) => {
   res.send("PEPEVOLT API RUNNING 🚀");
 });
 
-// TAP SYSTEM
+// TAP
 app.post("/tap", (req, res) => {
   const { wallet } = req.body;
 
@@ -29,8 +29,6 @@ app.post("/tap", (req, res) => {
   const user = getUser(wallet);
 
   const now = Date.now();
-
-  // anti-spam (300ms)
   if (now - user.lastTap < 300) {
     return res.json({ error: "Too fast" });
   }
@@ -44,17 +42,7 @@ app.post("/tap", (req, res) => {
   });
 });
 
-// GET SCORE
-app.get("/score/:wallet", (req, res) => {
-  const user = getUser(req.params.wallet);
-
-  res.json({
-    wallet: req.params.wallet,
-    score: user.score
-  });
-});
-
-// LEADERBOARD
+// LEADERBOARD (IMPORTANT)
 app.get("/leaderboard", (req, res) => {
   res.json(users);
 });
