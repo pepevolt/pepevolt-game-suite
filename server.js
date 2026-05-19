@@ -20,7 +20,6 @@ const pvltgAbi = [
     "function burnFrom(address account, uint256 amount) external"
 ];
 
-// Added fallback variants depending on how your specific contract parameters were written
 const gameAbi = [
     "function swapPVLTGtoPVLT(uint256 amount) external",
     "function swapPVLTGtoPVLT(address user, uint256 amount) external"
@@ -66,17 +65,21 @@ app.post("/refill",(req,res)=>{
     res.json({ success:true, energy:user.energy });
 });
 
+/* ================= SWAP POINTS ================= */
 app.post("/swap-points",(req,res)=>{
     const { wallet } = req.body;
     const user = users[wallet];
     if(!user){ return res.json({ error:"User not found" }); }
-    if(user.points < 10000){ return res.json({ error:"Need minimum 10000 points to swap" }); }
+    
+    // UPDATED LIMIT: Require minimum 100 points to swap
+    if(user.points < 100){ return res.json({ error:"Need minimum 100 points to swap" }); }
 
-    const earned = Math.floor(user.points / 10000);
-    user.points = user.points % 10000;
+    // UPDATED MATH: 100 Points = 1 PVLTG
+    const earned = Math.floor(user.points / 100);
+    user.points = user.points % 100; // Store the remaining left-over points
     user.pvltg += earned;
 
-    res.json({ success:true, pvltg:user.pvltg });
+    res.json({ success:true, pvltg:user.pvltg, remainingPoints: user.points });
 });
 
 /* ================= CLAIM PVLTG ================= */
@@ -86,7 +89,9 @@ app.post("/claim-pvltg", async(req, res)=>{
         const user = users[userWallet];
 
         if(!user){ return res.json({ error:"User not found" }); }
-        if(user.pvltg < 100){ return res.json({ error:"Need minimum 100 PVLTG" }); }
+        
+        // UPDATED LIMIT: Require minimum 10 PVLTG to claim
+        if(user.pvltg < 10){ return res.json({ error:"Need minimum 10 PVLTG" }); }
 
         const amount = ethers.utils.parseEther(user.pvltg.toString());
 
@@ -99,15 +104,12 @@ app.post("/claim-pvltg", async(req, res)=>{
         // Step 2: Call the Game Engine swap function
         let swapTx;
         try {
-            // Try calling swap with target address parameter if contract expects it
             swapTx = await gameEngine.swapPVLTGtoPVLT(userWallet, amount);
         } catch(e) {
-            // Fallback method execution if contract only accepts amount argument
             swapTx = await gameEngine.swapPVLTGtoPVLT(amount);
         }
         await swapTx.wait();
 
-        // Reset state upon absolute contract execution success
         user.pvltg = 0;
         res.json({ success:true, tx: swapTx.hash });
 
