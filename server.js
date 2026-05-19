@@ -16,34 +16,32 @@ let serverWallet;
 let treasuryContract;
 
 try {
-    const rpc = process.env.RPC_URL ? process.env.RPC_URL.trim() : "";
-    const pkey = process.env.PRIVATE_KEY ? process.env.PRIVATE_KEY.trim() : "";
-    const treasuryHex = process.env.TREASURY_ADDRESS ? process.env.TREASURY_ADDRESS.trim() : "";
-
-    provider = new ethers.providers.JsonRpcProvider(rpc, {
+    provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL, {
         chainId: 137,
         name: "polygon"
     });
 
-    if (pkey) {
-        serverWallet = new ethers.Wallet(pkey, provider);
+    if (process.env.PRIVATE_KEY) {
+        serverWallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
         const treasuryAbi = [
             "function processPlayerClaim(address _playerWallet, uint256 _pvltgAmount) external",
             "function purchaseEnergyPack(address _playerWallet) external"
         ];
-        if (treasuryHex) {
-            treasuryContract = new ethers.Contract(treasuryHex, treasuryAbi, serverWallet);
+        if (process.env.TREASURY_ADDRESS) {
+            treasuryContract = new ethers.Contract(process.env.TREASURY_ADDRESS, treasuryAbi, serverWallet);
         }
     }
 } catch (error) {
     console.error("Boot configuration mismatch runtime log:", error.message);
 }
 
+// Energy loop calculations helper
 function updateEnergyRefill(user) {
     const now = Date.now();
     if (user.energy === 0) {
         const elapsedSeconds = Math.floor((now - user.lastEnergyDepleted) / 1000);
         if (elapsedSeconds > 0) {
+            // Cap the automatic restoration exactly to a max window of 20 seconds (20 energy points total)
             const addedEnergy = Math.min(elapsedSeconds, 20);
             user.energy = addedEnergy;
         }
@@ -79,7 +77,7 @@ app.post("/tap", (req, res) => {
     }
 
     user.energy -= 1;
-    user.points += 2; // 1 Tap = 2 Points
+    user.points += 2; // Rule modifier optimization: 1 Tap = 2 Points
 
     if (user.energy === 0) {
         user.lastEnergyDepleted = Date.now();
@@ -94,14 +92,16 @@ app.post("/buy-energy", async (req, res) => {
         const key = wallet.toLowerCase();
         const user = users[key];
         if (!user) return res.json({ error: "User not found" });
+
         if (!treasuryContract) return res.json({ error: "Treasury not loaded on server" });
 
         console.log(`Processing on-chain purchase of energy for ${key}...`);
         
+        // Triggers the on-chain transfer of 1000 PVLT from user to treasury
         const tx = await treasuryContract.purchaseEnergyPack(key);
         await tx.wait();
 
-        user.energy += 10000; 
+        user.energy += 10000; // Adds 10,000 energy points upon block verification confirmation
         user.lastEnergyDepleted = 0; 
         
         res.json({ success: true, energy: user.energy });
@@ -117,11 +117,12 @@ app.post("/swap-points", (req, res) => {
     const user = users[key];
     if (!user) return res.json({ error: "Profile missing" });
 
+    // Rule baseline: 2000 points = 4 Game Currency Tokens ($PVLTG)
     if (user.points < 2000) return res.json({ error: "Minimum 2,000 points required to swap" });
 
     const multiplier = Math.floor(user.points / 2000);
     user.points = user.points % 2000;
-    user.pvltg += (multiplier * 4); 
+    user.pvltg += (multiplier * 4);
 
     res.json({ success: true, pvltg: user.pvltg, remainingPoints: user.points });
 });
@@ -134,19 +135,19 @@ app.post("/withdraw-pvltg", async (req, res) => {
 
         if (!user) return res.json({ error: "User profile context uninitialized" });
         
+        // Calculation check: Determine expected output payout value
         const expectedPayout = user.pvltg / 500;
-        
         if (expectedPayout < 10) return res.json({ error: "Withdrawal quantity below minimum required threshold of 10 PVLT" });
         if (expectedPayout > 1000) return res.json({ error: "Withdrawal quantity exceeds maximum allowed threshold of 1000 PVLT" });
 
-        if (!treasuryContract) return res.json({ error: "Treasury contract connection not initialized" });
+        const rawBalance = user.pvltg;
+        const amountInWei = ethers.utils.parseEther(rawBalance.toString());
 
-        const amountInWei = ethers.utils.parseEther(user.pvltg.toString());
-
-        console.log(`Executing transaction via backend master vault for wallet: ${key}`);
+        // Process on-chain conversion via Contract 3
         const tx = await treasuryContract.processPlayerClaim(key, amountInWei);
         await tx.wait();
 
+        // Clear player currency allocations instantly upon block validation logs confirmation
         user.pvltg = 0;
         res.json({ success: true, tx: tx.hash });
 
