@@ -1,9 +1,8 @@
 {
-  "name": "pvlt-server",
+  "name": "pepevolt-game-suite",
   "version": "1.0.0",
-  "description": "PVLT Polygon Backend",
-  "main": "server.js",
   "type": "module",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
@@ -11,6 +10,6 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "ethers": "^5.7.2",
-    "express": "^4.18.2"
+    "express": "^4.19.2"
   }
 }
