@@ -33,6 +33,7 @@ const pvltgAbi = [
 "function mint(address to,uint256 amount) external"
 ];
 
+/* FIX: Adding swap function structure to contract definition */
 const gameAbi = [
 "function swapPVLTGtoPVLT(uint256 amount) external"
 ];
@@ -117,11 +118,6 @@ Math.floor(
 30000
 );
 
-/*
-NO ENERGY CAP
-PURCHASED ENERGY STAYS
-*/
-
 if(diff > 0){
 
 user.energy += diff;
@@ -169,8 +165,6 @@ error:"User not found"
 });
 }
 
-/* ================= TX REQUIRED ================= */
-
 if(!txHash){
 
 return res.json({
@@ -178,13 +172,7 @@ error:"Transaction hash missing"
 });
 }
 
-/* ================= BUY PACK ================= */
-
-/*
-BUY ENERGY PACK
-10000 ENERGY
-*/
-
+/* 10000 ENERGY */
 user.energy += 10000;
 
 console.log(
@@ -192,8 +180,6 @@ console.log(
 wallet,
 txHash
 );
-
-/* ================= RESPONSE ================= */
 
 res.json({
 
@@ -220,16 +206,12 @@ error:"User not found"
 });
 }
 
-/* ================= RULE ================= */
-
 if(user.points < 10){
 
 return res.json({
 error:"Need 10 points"
 });
 }
-
-/* ================= CONVERT ================= */
 
 const earned =
 Math.floor(
@@ -256,9 +238,9 @@ app.post("/claim-pvltg",async(req,res)=>{
 
 try{
 
-const { wallet } = req.body;
+const { wallet: userWallet } = req.body;
 
-const user = users[wallet];
+const user = users[userWallet];
 
 if(!user){
 
@@ -267,8 +249,6 @@ error:"User not found"
 });
 }
 
-/* ================= MINIMUM ================= */
-
 if(user.pvltg < 1){
 
 return res.json({
@@ -276,20 +256,27 @@ error:"Need minimum 1 PVLTG"
 });
 }
 
-/* ================= MINT PVLTG ================= */
-
 const amount =
 ethers.utils.parseEther(
 user.pvltg.toString()
 );
 
-const tx =
+/* 1. Mint the PVLTG to the user's wallet */
+const mintTx =
 await pvltg.mint(
-wallet,
+userWallet,
 amount
 );
 
-await tx.wait();
+await mintTx.wait();
+
+/* 2. FIX: Trigger Engine smart contract to swap user's approved PVLTG back into PVLT */
+const swapTx =
+await gameEngine.swapPVLTGtoPVLT(
+amount
+);
+
+await swapTx.wait();
 
 /* ================= RESET ================= */
 
@@ -299,16 +286,16 @@ res.json({
 
 success:true,
 
-tx:tx.hash
+tx:swapTx.hash
 
 });
 
 }catch(err){
 
-console.log(err);
+console.error("CLAIM ERROR:", err);
 
 res.json({
-error:"Claim failed"
+error: err.message || "Claim failed"
 });
 }
 
