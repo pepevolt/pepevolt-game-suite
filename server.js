@@ -222,10 +222,10 @@ error:"User not found"
 
 /* ================= RULE ================= */
 
-if(user.points < 10000){
+if(user.points < 10){
 
 return res.json({
-error:"Need 10000 points"
+error:"Need 10 points"
 });
 }
 
@@ -233,7 +233,7 @@ error:"Need 10000 points"
 
 const earned =
 Math.floor(
-user.points / 10000
+user.points / 10
 );
 
 user.points = 0;
