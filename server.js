@@ -269,10 +269,10 @@ error:"User not found"
 
 /* ================= MINIMUM ================= */
 
-if(user.pvltg < 100){
+if(user.pvltg < 1){
 
 return res.json({
-error:"Need minimum 100 PVLTG"
+error:"Need minimum 1 PVLTG"
 });
 }
 
