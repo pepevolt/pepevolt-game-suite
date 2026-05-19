@@ -11,7 +11,11 @@ app.use(express.json());
 
 const users = {};
 
-const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
+// Hardcoding network details prevents 'could not detect network' errors during RPC latency spikes
+const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL, {
+    chainId: 137,
+    name: "polygon"
+});
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
 /* ================= CONTRACTS ================= */
@@ -71,12 +75,12 @@ app.post("/swap-points",(req,res)=>{
     const user = users[wallet];
     if(!user){ return res.json({ error:"User not found" }); }
     
-    // UPDATED LIMIT: Require minimum 100 points to swap
+    // 100 Points minimum required
     if(user.points < 100){ return res.json({ error:"Need minimum 100 points to swap" }); }
 
-    // UPDATED MATH: 100 Points = 1 PVLTG
+    // Conversion: 100 Points = 1 PVLTG
     const earned = Math.floor(user.points / 100);
-    user.points = user.points % 100; // Store the remaining left-over points
+    user.points = user.points % 100; 
     user.pvltg += earned;
 
     res.json({ success:true, pvltg:user.pvltg, remainingPoints: user.points });
@@ -90,7 +94,7 @@ app.post("/claim-pvltg", async(req, res)=>{
 
         if(!user){ return res.json({ error:"User not found" }); }
         
-        // UPDATED LIMIT: Require minimum 10 PVLTG to claim
+        // 10 PVLTG minimum required to trigger claim
         if(user.pvltg < 10){ return res.json({ error:"Need minimum 10 PVLTG" }); }
 
         const amount = ethers.utils.parseEther(user.pvltg.toString());
@@ -101,7 +105,7 @@ app.post("/claim-pvltg", async(req, res)=>{
         const mintTx = await pvltg.mint(userWallet, amount);
         await mintTx.wait();
 
-        // Step 2: Call the Game Engine swap function
+        // Step 2: Swap action
         let swapTx;
         try {
             swapTx = await gameEngine.swapPVLTGtoPVLT(userWallet, amount);
