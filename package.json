@@ -1,6 +1,6 @@
 
 {
-  "name": "pvlt-game-suite",
+  "name": "pepevolt-game-suite",
   "version": "1.0.0",
   "main": "server.js",
   "dependencies": {
