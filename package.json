@@ -1,7 +1,7 @@
 {
   "name": "pepevolt-game-suite",
   "version": "1.0.0",
-  "description": "Backend Game Engine Suite and API Endpoint Router for PVLT Tap Game",
+  "description": "Backend Engine Handler for PVLT Tap Game Ecosystem",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -11,7 +11,7 @@
     "express",
     "polygon",
     "ethers",
-    "web3"
+    "reown"
   ],
   "author": "",
   "license": "ISC",
