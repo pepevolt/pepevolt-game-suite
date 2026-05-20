@@ -1,327 +1,82 @@
-import express from "express";
-import cors from "cors";
-import dotenv from "dotenv";
-import { ethers } from "ethers";
-
-dotenv.config();
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const { ethers } = require('ethers');
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
-/* ================= STORAGE ================= */
+// In-memory database tracking (for production, replace with MongoDB or PostgreSQL)
+const db = {}; 
 
-const users = {};
+const provider = new ethers.providers.JsonRpcProvider("https://polygon-rpc.com");
+const walletSigner = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
-/* ================= POLYGON ================= */
-
-const provider =
-new ethers.providers.JsonRpcProvider(
-process.env.RPC_URL
-);
-
-const wallet =
-new ethers.Wallet(
-process.env.PRIVATE_KEY,
-provider
-);
-
-/* ================= CONTRACTS ================= */
-
-const pvltgAbi = [
-"function mint(address to,uint256 amount) external"
-];
-
-const gameAbi = [
-"function swapPVLTGtoPVLT(uint256 amount) external"
-];
-
-const pvltg =
-new ethers.Contract(
-process.env.PVLTG,
-pvltgAbi,
-wallet
-);
-
-const gameEngine =
-new ethers.Contract(
-process.env.ENGINE,
-gameAbi,
-wallet
-);
-
-/* ================= HEALTH ================= */
-
-app.get("/",(req,res)=>{
-
-res.send("PVLT SERVER RUNNING");
-
-});
-
-/* ================= CREATE USER ================= */
-
-app.post("/user",(req,res)=>{
-
-const { wallet } = req.body;
-
-if(!wallet){
-
-return res.json({
-error:"Wallet required"
-});
+function getUser(wallet) {
+    const addr = wallet.toLowerCase();
+    if (!db[addr]) {
+        db[addr] = { points: 0, energy: 50, pvltBalance: 0.0, nonce: 0 };
+    }
+    return db[addr];
 }
 
-if(!users[wallet]){
-
-users[wallet] = {
-
-points:0,
-
-energy:50,
-
-pvltg:0,
-
-lastRefill:Date.now()
-
-};
-}
-
-res.json(users[wallet]);
-
+app.post('/user', (req, res) => {
+    res.json(getUser(req.body.wallet));
 });
 
-/* ================= TAP ================= */
-
-app.post("/tap",(req,res)=>{
-
-const { wallet } = req.body;
-
-const user = users[wallet];
-
-if(!user){
-
-return res.json({
-error:"User not found"
-});
-}
-
-/* ================= AUTO REFILL ================= */
-
-const now = Date.now();
-
-const diff =
-Math.floor(
-(now - user.lastRefill)
-/
-30000
-);
-
-/*
-NO ENERGY CAP
-PURCHASED ENERGY STAYS
-*/
-
-if(diff > 0){
-
-user.energy += diff;
-
-user.lastRefill = now;
-}
-
-/* ================= TAP ================= */
-
-if(user.energy <= 0){
-
-return res.json({
-error:"No energy"
-});
-}
-
-user.energy -= 1;
-
-user.points += 1;
-
-res.json({
-
-points:user.points,
-
-energy:user.energy,
-
-pvltg:user.pvltg
-
+app.post('/tap', (req, res) => {
+    const user = getUser(req.body.wallet);
+    if (user.energy <= 0) return res.status(400).json({ error: "No energy" });
+    user.points += 1;
+    user.energy -= 1;
+    res.json(user);
 });
 
+// The Convert Logic: 10,000 gPVLT Points -> 1 Spendable PVLT
+app.post('/swap-points', (req, res) => {
+    const user = getUser(req.body.wallet);
+    if (user.points < 10000) return res.status(400).json({ error: "Minimum 10,000 gPVLT required" });
+    
+    const increment = Math.floor(user.points / 10000);
+    user.points = user.points % 10000; // Keep the remainder points
+    user.pvltBalance += increment;
+    
+    res.json(user);
 });
 
-/* ================= BUY ENERGY ================= */
-
-app.post("/refill",(req,res)=>{
-
-const { wallet, txHash } = req.body;
-
-const user = users[wallet];
-
-if(!user){
-
-return res.json({
-error:"User not found"
-});
-}
-
-/* ================= TX REQUIRED ================= */
-
-if(!txHash){
-
-return res.json({
-error:"Transaction hash missing"
-});
-}
-
-/* ================= BUY PACK ================= */
-
-/*
-BUY ENERGY PACK
-10000 ENERGY
-*/
-
-user.energy += 10000;
-
-console.log(
-"ENERGY PURCHASE:",
-wallet,
-txHash
-);
-
-/* ================= RESPONSE ================= */
-
-res.json({
-
-success:true,
-
-energy:user.energy
-
+app.post('/refill', (req, res) => {
+    const user = getUser(req.body.wallet);
+    user.energy += 10000; 
+    res.json(user);
 });
 
+// Secure On-Chain Cryptographic Claim Signature Generator
+app.post('/claim-pvlt', async (req, res) => {
+    const user = getUser(req.body.wallet);
+    const claimAmount = Math.floor(user.pvltBalance);
+
+    if (claimAmount < 100 || claimAmount > 500) {
+        return res.status(400).json({ error: "Claims must be between 100 and 500 PVLT" });
+    }
+
+    try {
+        // Construct the cryptographic hash payload to verify on-chain
+        const messageHash = ethers.utils.solidityKeccak256(
+            ["address", "uint256", "uint256", "address"],
+            [req.body.wallet, claimAmount, user.nonce, process.env.TREASURY_VAULT_ADDRESS]
+        );
+        
+        const signature = await walletSigner.signMessage(ethers.utils.arrayify(messageHash));
+        
+        user.pvltBalance -= claimAmount;
+        user.nonce += 1; // Sync the nonces to avoid replay loops
+
+        res.json({ claimAmount, signature, remainingPvlt: user.pvltBalance });
+    } catch (err) {
+        res.status(500).json({ error: "Signature mapping failed" });
+    }
 });
 
-/* ================= SWAP POINTS ================= */
-
-app.post("/swap-points",(req,res)=>{
-
-const { wallet } = req.body;
-
-const user = users[wallet];
-
-if(!user){
-
-return res.json({
-error:"User not found"
-});
-}
-
-/* ================= RULE ================= */
-
-if(user.points < 10){
-
-return res.json({
-error:"Need 10 points"
-});
-}
-
-/* ================= CONVERT ================= */
-
-const earned =
-Math.floor(
-user.points / 10
-);
-
-user.points = 0;
-
-user.pvltg += earned;
-
-res.json({
-
-success:true,
-
-pvltg:user.pvltg
-
-});
-
-});
-
-/* ================= CLAIM PVLTG ================= */
-
-app.post("/claim-pvltg",async(req,res)=>{
-
-try{
-
-const { wallet } = req.body;
-
-const user = users[wallet];
-
-if(!user){
-
-return res.json({
-error:"User not found"
-});
-}
-
-/* ================= MINIMUM ================= */
-
-if(user.pvltg < 1){
-
-return res.json({
-error:"Need minimum 1 PVLTG"
-});
-}
-
-/* ================= MINT PVLTG ================= */
-
-const amount =
-ethers.utils.parseEther(
-user.pvltg.toString()
-);
-
-const tx =
-await pvltg.mint(
-wallet,
-amount
-);
-
-await tx.wait();
-
-/* ================= RESET ================= */
-
-user.pvltg = 0;
-
-res.json({
-
-success:true,
-
-tx:tx.hash
-
-});
-
-}catch(err){
-
-console.log(err);
-
-res.json({
-error:"Claim failed"
-});
-}
-
-});
-
-/* ================= START ================= */
-
-app.listen(
-process.env.PORT || 10000,
-()=>{
-
-console.log(
-"PVLT SERVER RUNNING"
-);
-
-});
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`Engine active on port ${PORT}`));
