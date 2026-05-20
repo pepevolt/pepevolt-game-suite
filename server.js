@@ -7,6 +7,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Fallback message to prevent "Cannot GET /" failures on deployment platforms
+app.get("/", (req, res) => {
+    res.status(200).send("PepeVolt Game Suite API Engine Server Online.");
+});
+
 const walletSigner = new ethers.Wallet(process.env.PRIVATE_KEY);
 const tapsHistory = {};
 
