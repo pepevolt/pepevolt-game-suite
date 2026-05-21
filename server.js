@@ -5,7 +5,6 @@ const { ethers } = require('ethers');
 
 const app = express();
 
-// Enabled specific cross-origin handling to support mobile web3 in-app browsers
 app.use(cors({
     origin: "*",
     methods: ["GET", "POST", "OPTIONS"],
@@ -14,7 +13,6 @@ app.use(cors({
 
 app.use(express.json());
 
-// In-Memory Database State
 const db = {}; 
 
 const provider = new ethers.providers.JsonRpcProvider("https://polygon-rpc.com");
